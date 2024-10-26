@@ -1,41 +1,96 @@
-![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
+![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg)
 
-# Tiny Tapeout Verilog Project Template
+# One Sprite Pony
 
-- [Read the documentation for project](docs/info.md)
+This is a resubmission of [tt05-one-sprite-pony](https://github.com/mole99/tt05-one-sprite-pony) with a few updates.
 
-## What is Tiny Tapeout?
+![animation.gif](animation.gif)
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+Some of the notable changes:
 
-To learn more and get started, visit https://tinytapeout.com.
+- Uses clock gating for the sprite shift register
+- Simplified SPI interface
+  - `spi_mode` (pin `ui[0]`) to select between writing to the registers (`0`) or shifting new data into the sprite (`1`)
+  - Uses latches for the configuration registers
+- Assign new sprite positions only on new line
+- Clamp x and y position to prevent uncontrolled shifting of the sprite data
 
-## Set up your Verilog project
+Quick summary of the features:
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+- SVGA 800x600@60 Hz (pixel clock 40.0 MHz), 2 bits per color channel
+- Internal resolution of 100x75 for the sprite
+- Sprite with 12x12 pixel
+  - Initialized to the Tiny Tapeout logo
+  - Foreground and background color
+  - Background can be set transparent
+- 4 different colors (6 bit rrggbb)
+- 4 different backgrounds
+	- Solid color
+	- Funky
+	- Diagonal stripes
+	- Horizontal Stripes
+- SPI receiver
+	- Set sprite data
+	- Set colors (1-4)
+	- Set background (4 types)
+	- Set sprite x/y position
+	- Set miscellaneous options
 
-The GitHub action will automatically build the ASIC files using [OpenLane](https://www.zerotoasiccourse.com/terminology/openlane/).
+|   |   |
+|---|---|
+| ![image1.png](img/image1.png)  | ![image2.png](img/image2.png)  |
+| ![image3.png](img/image3.png)  | ![image4.png](img/image4.png)  |
 
-## Enable GitHub actions to build the results page
+## SPI Register
 
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
+SPI Settings
 
-## Resources
+	CPOL       = 0
+	CPHA       = 1
+	word width = 8
+	MSB first
+	CS is active low
 
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
+### Register Map
 
-## What next?
+For `spi_mode` **high**:
 
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
+In this mode the data gets shifted directly into the sprite for as long as CS asserted. It is possible to shift in single bits.
+
+For `spi_mode` **low**:
+
+Expects an address byte first followed by the value to write into the register. The word width must be 8 bits.
+
+| Addr Hex | Name | Type | Reset Value | Description |
+|----------|------|------|-------------|-------------|
+| 0x00     | COLOR1     | R/W     | 6'b110001            | 6 bit color in format RRGGBB used as sprite foreground            |
+| 0x01     | COLOR2     | R/W     | 6'b010101            | 6 bit color in format RRGGBB used as sprite background            |
+| 0x02     | COLOR3     | R/W     | 6'b001100            | 6 bit color in format RRGGBB used as solid color background           |
+| 0x03     | COLOR4     | R/W     | 6'b101100            | 6 bit color in format RRGGBB            |
+| 0x04     | SPRITE_X     | R/W     | 6'b000000            | 6 bit x position of the sprite            |
+| 0x05     | SPRITE_Y     | R/W     | 6'b000000            | 6 bit y position of the sprite            |
+| 0x06     | MISC     | R/W     | 4'b0110            | Various Settings, see below            |
+
+Details for MISC Register:
+
+- Bits 1:0: Background selection
+	- 00: Solid color
+	- 01: Funky
+	- 10: Diagonal Stripes
+	- 11: Horizontal Stripes
+
+	New background type is assigned at hsync to prevent glitching
+- Bit 2: Enable movement of the sprite
+- Bit 3: Enable sprite background (transparency)
+
+Backgrounds:
+
+- Background type 1 uses COLOR3 as solid color.
+- Background type 2 calculates the color based on the screen coordinates.
+- Background types 3 to 4 (stripes) use all four colors for the stripes.
+
+For background types 2 to 4, the current time is used to vary the background.
+
+## Notes
+
+I have some problems with the latches in the GL simulation. We will see if they keep their initialization values. If not, it should be possible to manually write the initialization values to the registers.
